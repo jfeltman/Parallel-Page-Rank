@@ -1,5 +1,4 @@
 #include "main.h"
-#include "graph.c"
 
 int p=1;
 
@@ -13,7 +12,7 @@ int main(int argc, char *argv[])
 
     char *fileName = argv[4];
 
-    printf("p = %d | K = %d | D =  %lf | File = %s\n", p, K, D, fileName);
+    printf("p = %d | K = %d | D = %lf | File = %s\n", p, K, D, fileName);
     
     omp_set_num_threads(p);
 
@@ -34,17 +33,16 @@ int main(int argc, char *argv[])
     Graph *graph = createGraph(nodes);
     read_file(fileName, graph);
 
-    int t = toss_coin(D);
+    printGraph(graph);
+    
+    double pageRanks[nodes];
+    page_rank_estimator(graph, K, D, vertexCount, pageRanks);
 
-    printf("COIN FLIP = %d\n", t);
+//    sort_page_ranks(pageRanks, nodes);
 
-
-    int r = get_random_node(nodes, time(NULL));
-    printf("random node = %d\n", r);
-
-    printList(graph->list[r].head);
-
-//    printGraph(graph);
+//    int i;
+//    for(i = 0; i < 5; i++) {
+//    }
     return 0;
 }
 
@@ -57,13 +55,14 @@ int get_random_node(int numNodes, int i) {
     return rand_r(&seed) % numNodes;
 }
 
-int toss_coin(double D) {
+int toss_coin(double D, int i) {
     double flip;
 
     drandData state;
 
     int rank = omp_get_thread_num();
     int seed = rank + 1;
+    seed = seed * i;
 
     srand48_r(time(NULL) + seed, &state);
 
@@ -72,10 +71,71 @@ int toss_coin(double D) {
     printf("Rand Double = %f\n", flip);
 
     if (flip <= D) {
+        printf("HEADs\n");
         return 1;
-    } else {
+    } 
+    else {
+        printf("TAILS\n");
         return 0;
     }
+}
+
+int get_random_neighbor(Node *head, int numNeighbors, int index) {
+    int rank = omp_get_thread_num();
+    int seed = rank + 1;
+    seed = seed * index;
+   
+    int nextNode = rand_r(&seed) % numNeighbors + 1;
+    //printf("rand num = %d\n", nextNode);
+
+    Node *cur = head;
+    int i;
+  
+    for(i = 1; i < nextNode; i++)
+    {
+        cur = cur->next;
+    }
+
+    return cur->dest;
+}
+
+void page_rank_estimator(Graph *graph, int K, double D, int visit[], double pageRanks[]) {
+
+    int i, j, next;
+    int n = graph->numNodes;
+
+    int curNodeNumber;
+    Node *cur = malloc(sizeof(Node));
+
+    for(i = 0; i < n; i++) {
+        cur = graph->list[i].head;
+        curNodeNumber = i;
+        for(j = 0; j < K; j++) {
+            visit[curNodeNumber]++;
+
+            int toss = toss_coin(D, i);
+            
+            if(toss == 1) { // heads
+                next = get_random_node(n, i);
+                cur = graph->list[next].head;
+                curNodeNumber = next;
+            } 
+            else { // tails
+                // if node is by itself, keep hopping to itself
+                if(graph->list[curNodeNumber].numLinks != 0) {
+                    next = get_random_neighbor(cur, graph->list[curNodeNumber].numLinks, i);
+                    cur = graph->list[next].head;
+                    curNodeNumber = next;
+                }
+            }
+        }
+    }
+
+    for(i = 0; i < n; i++) {
+        pageRanks[i] = (double)visit[i] / (double)(n * K);
+        printf("Node %d rank = %lf\n", i, pageRanks[i]);
+    }
+
 }
 
 int find_num_nodes(char *file) {
@@ -108,4 +168,18 @@ int find_num_nodes(char *file) {
 
     fclose(fp);
     return max;
+}
+
+void sort_page_ranks(double ranks[], int n) {
+    int i, j;
+
+    for(i = 0; i < n; i++) {
+        for(j = 0; j < n; j++) {
+            if(ranks[j] < ranks[i]) {
+                double temp = ranks[i];
+                ranks[i] = ranks[j];
+                ranks[j] = temp;
+            }
+        }
+    }
 }

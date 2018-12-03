@@ -1,4 +1,10 @@
-#include "main.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <omp.h>
+#include <math.h>
+#include <assert.h>
+#include <string.h>
 
 typedef struct node
 {
@@ -8,6 +14,7 @@ typedef struct node
 
 typedef struct adjlist
 {
+    int numLinks;
     Node *head;
 }AdjList;
 

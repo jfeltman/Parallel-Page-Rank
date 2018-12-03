@@ -34,10 +34,48 @@ int main(int argc, char *argv[])
     Graph *graph = createGraph(nodes);
     read_file(fileName, graph);
 
-//    printList(graph->list[1].head);
+    int t = toss_coin(D);
+
+    printf("COIN FLIP = %d\n", t);
+
+
+    int r = get_random_node(nodes, time(NULL));
+    printf("random node = %d\n", r);
+
+    printList(graph->list[r].head);
 
 //    printGraph(graph);
     return 0;
+}
+
+int get_random_node(int numNodes, int i) {
+    int rank = omp_get_thread_num();
+    int seed = rank + 1;
+
+    seed = seed * i;
+
+    return rand_r(&seed) % numNodes;
+}
+
+int toss_coin(double D) {
+    double flip;
+
+    drandData state;
+
+    int rank = omp_get_thread_num();
+    int seed = rank + 1;
+
+    srand48_r(time(NULL) + seed, &state);
+
+    drand48_r(&state, &flip);
+
+    printf("Rand Double = %f\n", flip);
+
+    if (flip <= D) {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 int find_num_nodes(char *file) {

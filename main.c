@@ -33,16 +33,14 @@ int main(int argc, char *argv[])
     Graph *graph = createGraph(nodes);
     read_file(fileName, graph);
 
-    printGraph(graph);
+//    printGraph(graph);
     
-    double pageRanks[nodes];
+    int *pageRanks;
+    pageRanks = malloc(sizeof(int) * nodes);
+
     page_rank_estimator(graph, K, D, vertexCount, pageRanks);
-
-//    sort_page_ranks(pageRanks, nodes);
-
-//    int i;
-//    for(i = 0; i < 5; i++) {
-//    }
+    print_top_five_page_ranks(pageRanks, nodes);
+    
     return 0;
 }
 
@@ -57,7 +55,6 @@ int get_random_node(int numNodes, int i) {
 
 int toss_coin(double D, int i) {
     double flip;
-
     drandData state;
 
     int rank = omp_get_thread_num();
@@ -65,17 +62,13 @@ int toss_coin(double D, int i) {
     seed = seed * i;
 
     srand48_r(time(NULL) + seed, &state);
-
     drand48_r(&state, &flip);
-
-    printf("Rand Double = %f\n", flip);
+//    printf("Rand Double = %f\n", flip);
 
     if (flip <= D) {
-        printf("HEADs\n");
         return 1;
     } 
     else {
-        printf("TAILS\n");
         return 0;
     }
 }
@@ -99,22 +92,28 @@ int get_random_neighbor(Node *head, int numNeighbors, int index) {
     return cur->dest;
 }
 
-void page_rank_estimator(Graph *graph, int K, double D, int visit[], double pageRanks[]) {
-
-    int i, j, next;
+void page_rank_estimator(Graph *graph, int K, double D, int visit[], int pageRanks[]) {
+    int i, j, next, toss;
     int n = graph->numNodes;
 
     int curNodeNumber;
-    Node *cur = malloc(sizeof(Node));
+    Node *cur;
 
-    for(i = 0; i < n; i++) {
+    omp_set_num_threads(p);
+
+    double time = omp_get_wtime();
+
+    #pragma omp parallel for schedule(static) shared(visit) private(toss, next, cur, curNodeNumber)
+    for(i = 0; i < n; i++) 
+    {
         cur = graph->list[i].head;
         curNodeNumber = i;
         for(j = 0; j < K; j++) {
-            visit[curNodeNumber]++;
 
-            int toss = toss_coin(D, i);
-            
+            #pragma omp atomic
+            visit[curNodeNumber] += 1;
+
+            toss = toss_coin(D, i);
             if(toss == 1) { // heads
                 next = get_random_node(n, i);
                 cur = graph->list[next].head;
@@ -132,10 +131,12 @@ void page_rank_estimator(Graph *graph, int K, double D, int visit[], double page
     }
 
     for(i = 0; i < n; i++) {
-        pageRanks[i] = (double)visit[i] / (double)(n * K);
-        printf("Node %d rank = %lf\n", i, pageRanks[i]);
+        pageRanks[i] = visit[i];
+//        printf("Node %d rank = %d\n", i, pageRanks[i]);
     }
 
+    time = omp_get_wtime() - time;
+    printf("Parallel Time = %f seconds\n", time);
 }
 
 int find_num_nodes(char *file) {
@@ -170,16 +171,57 @@ int find_num_nodes(char *file) {
     return max;
 }
 
-void sort_page_ranks(double ranks[], int n) {
-    int i, j;
-
-    for(i = 0; i < n; i++) {
-        for(j = 0; j < n; j++) {
-            if(ranks[j] < ranks[i]) {
-                double temp = ranks[i];
-                ranks[i] = ranks[j];
-                ranks[j] = temp;
-            }
+void print_top_five_page_ranks(int pageRanks [], int n) 
+{ 
+    int i;
+    int first, second, third, fourth, fifth; 
+    int firstIndex, secondIndex, thirdIndex, fourthIndex, fifthIndex;
+                
+    fifth = fourth = third = first = second = 0.0; 
+    firstIndex = secondIndex = thirdIndex = fourthIndex = fifthIndex = 0;                       
+    for (i = 0; i < n ; i ++) 
+    { 
+        if (pageRanks[i] > first) { 
+            fifth = fourth;
+            fifthIndex = fourthIndex;
+            fourth = third;
+            fourthIndex = thirdIndex;
+            third = second;
+            thirdIndex = secondIndex;                                                                               
+            second = first;
+            secondIndex = firstIndex;
+            first = pageRanks[i];
+            firstIndex = i;
+        } else if (pageRanks[i] > second) { 
+            fifth = fourth;
+            fifthIndex = fourthIndex;
+            fourth = third;
+            fourthIndex = thirdIndex;
+            third = second; 
+            thirdIndex = secondIndex;
+            second = pageRanks[i]; 
+            secondIndex = i;
+        } else if (pageRanks[i] > third) {
+            fifth = fourth;
+            fifthIndex = fourthIndex;
+            fourth = third;
+            fourthIndex = thirdIndex;
+            third = pageRanks[i];
+            thirdIndex = i;
+        } else if (pageRanks[i] > fourth) { 
+            fifth = fourth;
+            fifthIndex = fourthIndex;
+            fourth = pageRanks[i]; 
+            fourthIndex = i;
+        } else if (pageRanks[i] > fifth) {
+            fifth = pageRanks[i];
+            fifthIndex = i;
         }
     }
-}
+                            
+    printf("Node %d\t| Page Rank: %d\n", firstIndex, first);
+    printf("Node %d\t| Page Rank: %d\n", secondIndex, second);
+    printf("Node %d\t| Page Rank: %d\n", thirdIndex, third);
+    printf("Node %d\t| Page Rank: %d\n", fourthIndex, fourth);
+    printf("Node %d\t| Page Rank: %d\n", fifthIndex, fifth);
+} 

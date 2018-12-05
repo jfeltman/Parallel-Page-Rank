@@ -27,19 +27,26 @@ int main(int argc, char *argv[])
     int nodes = find_num_nodes(fileName) + 1;
     printf("Number of Nodes: %d\n", nodes);
 
-    int vertexCount[nodes];
+    int *vertexCount;
+    vertexCount = malloc(sizeof(int) * nodes);
     memset(vertexCount, 0, sizeof(vertexCount));
 
     Graph *graph = createGraph(nodes);
     read_file(fileName, graph);
 
-//    printGraph(graph);
-    
-    int *pageRanks;
-    pageRanks = malloc(sizeof(int) * nodes);
+    double avgTime = 0.0;
+    int i;
+    for(i = 0; i < 10; i++) {
+        double time = omp_get_wtime();
+        page_rank_estimator(graph, K, D, vertexCount);
+        time = omp_get_wtime() - time;
 
-    page_rank_estimator(graph, K, D, vertexCount, pageRanks);
-    print_top_five_page_ranks(pageRanks, nodes);
+        avgTime += time;
+    }
+    printf("Avg time = %f seconds\n", avgTime/10.0);
+    
+    //page_rank_estimator(graph, K, D, vertexCount);
+    //print_top_five(vertexCount, nodes);
     
     return 0;
 }
@@ -47,7 +54,6 @@ int main(int argc, char *argv[])
 int get_random_node(int numNodes, int i) {
     int rank = omp_get_thread_num();
     int seed = rank + 1;
-
     seed = seed * i;
 
     return rand_r(&seed) % numNodes;
@@ -65,12 +71,10 @@ int toss_coin(double D, int i) {
     drand48_r(&state, &flip);
 //    printf("Rand Double = %f\n", flip);
 
-    if (flip <= D) {
+    if (flip <= D) 
         return 1;
-    } 
-    else {
+    else 
         return 0;
-    }
 }
 
 int get_random_neighbor(Node *head, int numNeighbors, int index) {
@@ -85,15 +89,13 @@ int get_random_neighbor(Node *head, int numNeighbors, int index) {
     int i;
   
     for(i = 1; i < nextNode; i++)
-    {
         cur = cur->next;
-    }
 
     return cur->dest;
 }
 
-void page_rank_estimator(Graph *graph, int K, double D, int visit[], int pageRanks[]) {
-    int i, j, next, toss;
+void page_rank_estimator(Graph *graph, int K, double D, int visit[]) {
+    int i;
     int n = graph->numNodes;
 
     int curNodeNumber;
@@ -101,42 +103,32 @@ void page_rank_estimator(Graph *graph, int K, double D, int visit[], int pageRan
 
     omp_set_num_threads(p);
 
-    double time = omp_get_wtime();
-
-    #pragma omp parallel for schedule(static) shared(visit) private(toss, next, cur, curNodeNumber)
+    #pragma omp parallel for schedule(static) shared(visit, graph) private(cur, curNodeNumber)
     for(i = 0; i < n; i++) 
     {
+        int j;
         cur = graph->list[i].head;
         curNodeNumber = i;
-        for(j = 0; j < K; j++) {
-
+        for(j = 0; j < K; j++) 
+        {
             #pragma omp atomic
             visit[curNodeNumber] += 1;
 
-            toss = toss_coin(D, i);
+            int toss = toss_coin(D, i);
             if(toss == 1) { // heads
-                next = get_random_node(n, i);
+                int next = get_random_node(n, i);
                 cur = graph->list[next].head;
                 curNodeNumber = next;
             } 
             else { // tails
-                // if node is by itself, keep hopping to itself
                 if(graph->list[curNodeNumber].numLinks != 0) {
-                    next = get_random_neighbor(cur, graph->list[curNodeNumber].numLinks, i);
+                    int next = get_random_neighbor(cur, graph->list[curNodeNumber].numLinks, i);
                     cur = graph->list[next].head;
                     curNodeNumber = next;
                 }
             }
         }
     }
-
-    for(i = 0; i < n; i++) {
-        pageRanks[i] = visit[i];
-//        printf("Node %d rank = %d\n", i, pageRanks[i]);
-    }
-
-    time = omp_get_wtime() - time;
-    printf("Parallel Time = %f seconds\n", time);
 }
 
 int find_num_nodes(char *file) {
@@ -171,7 +163,7 @@ int find_num_nodes(char *file) {
     return max;
 }
 
-void print_top_five_page_ranks(int pageRanks [], int n) 
+void print_top_five(int pageRanks [], int n) 
 { 
     int i;
     int first, second, third, fourth, fifth; 

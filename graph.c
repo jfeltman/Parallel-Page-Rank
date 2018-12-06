@@ -17,7 +17,7 @@ Graph* createGraph(int numNodes)
 
     int i;
     for(i = 0; i < numNodes; i++) {
-        graph->list[i].numLinks = 0;
+        graph->list[i].outLinks = 0;
         graph->list[i].head = NULL;
     }
     
@@ -27,9 +27,10 @@ Graph* createGraph(int numNodes)
 void addEdge(Graph *graph, int source, int dest)
 {
     Node *newNode = createNode(dest);
+    
     newNode->next = graph->list[source].head;
     graph->list[source].head = newNode;
-    graph->list[source].numLinks++;
+    graph->list[source].outLinks++;
 }
 
 void printList(Node *head)

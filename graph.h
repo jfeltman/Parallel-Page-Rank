@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <string.h>
 
+// Graph Representation - https://www.geeksforgeeks.org/graph-and-its-representations/
+
 typedef struct node
 {
     int dest;
@@ -14,7 +16,7 @@ typedef struct node
 
 typedef struct adjlist
 {
-    int numLinks;
+    int outLinks;
     Node *head;
 }AdjList;
 

@@ -1,5 +1,8 @@
 #include "graph.h"
 
+// Joshua Feltman
+// 11494067
+
 Node* createNode(int dest)
 {
     Node *newNode = malloc(sizeof(Node));

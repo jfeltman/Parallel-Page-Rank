@@ -2,6 +2,11 @@
 
 int p=1;
 
+// Joshua Feltman
+// 11494067
+
+// To Compile: gcc -o pagerank -fopenmp main.c graph.c
+
 int main(int argc, char *argv[])
 {
     p = atoi(argv[1]);
@@ -20,7 +25,7 @@ int main(int argc, char *argv[])
     {
         assert(p == omp_get_num_threads());
         int rank = omp_get_thread_num();
-        printf("Rank %d: Thread = %d\n", rank, omp_get_num_threads());
+        printf("Rank %d: Number of Threads = %d\n", rank, omp_get_num_threads());
     }
 
     // Add 1 for last array element
@@ -33,21 +38,41 @@ int main(int argc, char *argv[])
 
     Graph *graph = createGraph(nodes);
     read_file(fileName, graph);
-
+    
+    /*
+    // Runtime/Speedup Tests
     double avgTime = 0.0;
     int i;
     for(i = 0; i < 10; i++) {
         double time = omp_get_wtime();
-        page_rank_estimator(graph, K, D, vertexCount);
+        page_rank_estimator_atomic(graph, K, D, vertexCount);
         time = omp_get_wtime() - time;
 
         avgTime += time;
     }
     printf("Avg time = %f seconds\n", avgTime/10.0);
-    
-    //page_rank_estimator(graph, K, D, vertexCount);
+    */
+
+    // Quality Tests
+    //page_rank_estimator_atomic(graph, K, D, vertexCount);
     //print_top_five(vertexCount, nodes);
-    
+
+    // Synchronization Tests   
+    double criticalTime = omp_get_wtime();
+//    page_rank_estimator_critical(graph, K, D, vertexCount);
+    criticalTime = omp_get_wtime() - criticalTime;
+    printf("Critical Time: %f seconds\n", criticalTime);
+
+    double atomicTime = omp_get_wtime();
+    page_rank_estimator_atomic(graph, K, D, vertexCount);
+    atomicTime = omp_get_wtime() - atomicTime;
+    printf("Atomic Time: %f seconds\n", atomicTime);
+
+    double locksTime = omp_get_wtime();
+    page_rank_estimator_locks(graph, K, D, vertexCount);
+    locksTime = omp_get_wtime() - locksTime;
+    printf("Locks Time: %f seconds\n", locksTime);
+
     return 0;
 }
 
@@ -69,7 +94,7 @@ int toss_coin(double D, int i) {
 
     srand48_r(time(NULL) + seed, &state);
     drand48_r(&state, &flip);
-//    printf("Rand Double = %f\n", flip);
+    //printf("Rand Double = %f\n", flip);
 
     if (flip <= D) 
         return 1;
@@ -94,22 +119,56 @@ int get_random_neighbor(Node *head, int numNeighbors, int index) {
     return cur->dest;
 }
 
-void page_rank_estimator(Graph *graph, int K, double D, int visit[]) {
+void page_rank_estimator_critical(Graph *graph, int K, double D, int visit[]) {
     int i;
     int n = graph->numNodes;
 
-    int curNodeNumber;
-    Node *cur;
+    omp_set_num_threads(p);
+
+    #pragma omp parallel for schedule(static)
+    for(i = 0; i < n; i++) 
+    {
+        int j, curNodeNumber;
+        Node *cur = graph->list[i].head;
+        curNodeNumber = i;
+        for(j = 0; j < K; j++) 
+        {
+            #pragma omp critical
+            {
+                visit[curNodeNumber] += 1;
+            }
+
+            int toss = toss_coin(D, i);
+            if(toss == 1) { // heads
+                int next = get_random_node(n, i);
+                cur = graph->list[next].head;
+                curNodeNumber = next;
+            } 
+            else { // tails
+                if(graph->list[curNodeNumber].outLinks != 0) {
+                    int next = get_random_neighbor(cur, graph->list[curNodeNumber].outLinks, i);
+                    cur = graph->list[next].head;
+                    curNodeNumber = next;
+                }
+            }
+        }
+    }
+}
+
+void page_rank_estimator_atomic(Graph *graph, int K, double D, int visit[]) {
+    int i;            
+    int n = graph->numNodes;
+                
 
     omp_set_num_threads(p);
 
-    #pragma omp parallel for schedule(static) shared(visit, graph) private(cur, curNodeNumber)
-    for(i = 0; i < n; i++) 
+    #pragma omp parallel for schedule(static)
+    for(i = 0; i < n; i++)
     {
-        int j;
-        cur = graph->list[i].head;
+        int j, curNodeNumber;
+        Node *cur = graph->list[i].head;
         curNodeNumber = i;
-        for(j = 0; j < K; j++) 
+        for(j = 0; j < K; j++)
         {
             #pragma omp atomic
             visit[curNodeNumber] += 1;
@@ -119,15 +178,62 @@ void page_rank_estimator(Graph *graph, int K, double D, int visit[]) {
                 int next = get_random_node(n, i);
                 cur = graph->list[next].head;
                 curNodeNumber = next;
-            } 
+            }
             else { // tails
-                if(graph->list[curNodeNumber].numLinks != 0) {
-                    int next = get_random_neighbor(cur, graph->list[curNodeNumber].numLinks, i);
+                if(graph->list[curNodeNumber].outLinks != 0) {
+                    int next = get_random_neighbor(cur, graph->list[curNodeNumber].outLinks, i);
                     cur = graph->list[next].head;
                     curNodeNumber = next;
                 }
             }
         }
+    }
+}
+
+void page_rank_estimator_locks(Graph *graph, int K, double D, int visit[]) {
+    int i;
+    int n = graph->numNodes;
+
+    omp_lock_t my_lock[n];
+    
+    // init lock
+    for(i = 0; i < n; i++) {
+        omp_init_lock(&(my_lock[i]));
+    }
+
+    omp_set_num_threads(p);
+
+    #pragma omp parallel for schedule(static)
+    for(i = 0; i < n; i++)
+    {
+        int j, curNodeNumber;
+        Node *cur = graph->list[i].head;
+        curNodeNumber = i;
+        for(j = 0; j < K; j++)
+        {
+            omp_set_lock(&(my_lock[curNodeNumber]));
+            visit[curNodeNumber] += 1;
+            omp_unset_lock(&(my_lock[curNodeNumber]));
+
+            int toss = toss_coin(D, i);
+            if(toss == 1) { // heads
+                int next = get_random_node(n, i);
+                cur = graph->list[next].head;
+                curNodeNumber = next;
+            }
+            else { // tails
+                if(graph->list[curNodeNumber].outLinks != 0) {
+                    int next = get_random_neighbor(cur, graph->list[curNodeNumber].outLinks, i);
+                    cur = graph->list[next].head;
+                    curNodeNumber = next;
+                }
+            }
+        }
+    }
+
+    // destroy lock
+    for(i = 0; i < n; i++) {
+        omp_destroy_lock(&(my_lock[i]));
     }
 }
 
